@@ -246,7 +246,9 @@ function handle_results(PDO $pdo): void
         $errorstr  = (string) $r['errorstr'];
 
         if ($errorcode !== 0) {
-            $newStatus = 17; // błąd – wróć do "aktualny" żeby ponowić
+            // Zostaw status 18 – nie wracaj do 17, żeby nie tworzyć pętli.
+            // Admin musi ręcznie zmienić status na 17 żeby ponowić wydruk.
+            $newStatus = 18;
             $comment   = "Błąd druku bsxPrinter [$errorcode]: $errorstr";
         } elseif ($bsxStatus === 2) {
             $newStatus = 19; // wydrukowany
