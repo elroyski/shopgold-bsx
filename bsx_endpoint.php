@@ -109,6 +109,20 @@ function handle_getreceipts(PDO $pdo): void
     $productsByOrder  = group_by($products,  'orders_id');
     $discountsByOrder = group_by($discounts, 'orders_id');
 
+    // Licznik prób wydruku (step) – potrzebny do ponownej fiskalizacji
+    $stepByOrder = [];
+    if (BSX_ALLOW_REPRINT) {
+        $steps = $pdo->query("
+            SELECT orders_id, COUNT(*) AS cnt
+            FROM orders_status_history
+            WHERE orders_id IN ($in) AND orders_status_id = 18
+            GROUP BY orders_id
+        ")->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($steps as $s) {
+            $stepByOrder[$s['orders_id']] = (int) $s['cnt'];
+        }
+    }
+
     // Buduj XML
     $xml      = new SimpleXMLElement('<?xml version="1.0" encoding="utf-8"?><root/>');
     $receipts = $xml->addChild('receipts');
@@ -120,7 +134,7 @@ function handle_getreceipts(PDO $pdo): void
 
         $receipt = $receipts->addChild('receipt');
         $receipt->addAttribute('id',    (string) $oid);
-        $receipt->addAttribute('step',  '0');
+        $receipt->addAttribute('step',  (string) ($stepByOrder[$oid] ?? 0));
         $receipt->addAttribute('total', fmt($total));
 
         if ($isCard) {
