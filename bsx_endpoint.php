@@ -200,18 +200,27 @@ function handle_results(PDO $pdo): void
             (:oid, :status, NOW(), 0, :comment)
     ");
 
-    // Tabela receipts w shopGold – wstawiamy rekord paragonu
-    // Jeśli kolumny się różnią, dostosuj poniżej.
+    // Tabela receipts w shopGold
     $stmtReceipt = $pdo->prepare("
         INSERT INTO receipts
-            (orders_id, receipt_number, date_added, error_code, error_message)
-        VALUES
-            (:oid, :nodoc, :print_date, :errorcode, :errorstr)
+            (orders_id, receipts_language_id, receipts_nr,
+             receipts_date_sell, receipts_date_generated, receipts_date_modified,
+             receipts_payment_type, receipts_comments)
+        SELECT
+            o.orders_id,
+            1,
+            :nodoc,
+            :date_sell,
+            NOW(), NOW(),
+            o.payment_method,
+            :comments
+        FROM orders o
+        WHERE o.orders_id = :oid
         ON DUPLICATE KEY UPDATE
-            receipt_number = VALUES(receipt_number),
-            date_added     = VALUES(date_added),
-            error_code     = VALUES(error_code),
-            error_message  = VALUES(error_message)
+            receipts_nr            = VALUES(receipts_nr),
+            receipts_date_sell     = VALUES(receipts_date_sell),
+            receipts_date_modified = NOW(),
+            receipts_comments      = VALUES(receipts_comments)
     ");
 
     foreach ($xml->receipt as $r) {
@@ -237,11 +246,10 @@ function handle_results(PDO $pdo): void
 
         if ($bsxStatus === 2) {
             $stmtReceipt->execute([
-                ':oid'       => $oid,
-                ':nodoc'     => $nodoc,
-                ':print_date'=> $date ?: date('Y-m-d H:i:s'),
-                ':errorcode' => 0,
-                ':errorstr'  => null,
+                ':oid'      => $oid,
+                ':nodoc'    => $nodoc,
+                ':date_sell'=> $date ?: date('Y-m-d H:i:s'),
+                ':comments' => "Paragon fiskalny nr $nodoc (bsxPrinter)",
             ]);
         }
     }
