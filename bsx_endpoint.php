@@ -76,10 +76,10 @@ function handle_getreceipts(PDO $pdo): void
         SELECT
             op.orders_id,
             op.products_name,
-            op.products_price,
+            ROUND(op.products_price * (1 + op.products_tax / 100), 2) AS products_price,
             op.products_quantity,
             op.products_tax        AS vatrate,
-            op.final_price         AS item_total
+            ROUND(op.final_price   * (1 + op.products_tax / 100), 2) AS item_total
         FROM orders_products op
         WHERE op.orders_id IN ($in)
         ORDER BY op.orders_id, op.orders_products_id
