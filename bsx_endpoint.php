@@ -54,10 +54,12 @@ function handle_getreceipts(PDO $pdo): void
             o.orders_id,
             o.customers_nip,
             o.payment_method,
-            ot.value AS order_total
+            ot_total.value    AS order_total,
+        ot_ship.value     AS shipping_total,
+        ot_ship.title     AS shipping_title
         FROM orders o
-        LEFT JOIN orders_total ot
-               ON ot.orders_id = o.orders_id AND ot.class = 'ot_total'
+        LEFT JOIN orders_total ot_total ON ot_total.orders_id = o.orders_id AND ot_total.class = 'ot_total'
+        LEFT JOIN orders_total ot_ship  ON ot_ship.orders_id  = o.orders_id AND ot_ship.class  = 'ot_shipping'
         WHERE o.orders_status = 17
         ORDER BY o.orders_id
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -155,7 +157,7 @@ function handle_getreceipts(PDO $pdo): void
             $receipt->addAttribute('discountvalue', fmt($disc['discount_amount']));
         }
 
-        // Pozycje
+        // Pozycje produktów
         foreach ($productsByOrder[$oid] ?? [] as $p) {
             $item = $receipt->addChild('item');
             $item->addAttribute('name',     substr($p['products_name'], 0, 40));
@@ -163,6 +165,18 @@ function handle_getreceipts(PDO $pdo): void
             $item->addAttribute('quantity', fmt_qty($p['products_quantity']));
             $item->addAttribute('vatrate',  (string)(int)$p['vatrate']);
             $item->addAttribute('total',    fmt($p['item_total']));
+        }
+
+        // Przesyłka jako osobna pozycja (jeśli > 0)
+        $shippingTotal = (float) ($order['shipping_total'] ?? 0);
+        if ($shippingTotal > 0) {
+            $shippingName = substr($order['shipping_title'] ?? 'Przesyłka', 0, 40);
+            $ship = $receipt->addChild('item');
+            $ship->addAttribute('name',     $shippingName);
+            $ship->addAttribute('price',    fmt($shippingTotal));
+            $ship->addAttribute('quantity', '1');
+            $ship->addAttribute('vatrate',  BSX_SHIPPING_VAT);
+            $ship->addAttribute('total',    fmt($shippingTotal));
         }
     }
 
