@@ -41,6 +41,7 @@ $pdo = new PDO(
 match ($cmd) {
     'getreceipts' => handle_getreceipts($pdo),
     'results'     => handle_results($pdo),
+    'preview'     => handle_preview($pdo),
     default       => print('<root><error>Unknown command</error></root>'),
 };
 
@@ -293,6 +294,127 @@ function handle_results(PDO $pdo): void
     }
 
     echo '<root>OK</root>';
+}
+
+// ─── preview (diagnostyka – bez zmiany statusu) ───────────────────────────────
+
+function handle_preview(PDO $pdo): void
+{
+    $oid = (int) ($_REQUEST['order_id'] ?? 0);
+    if (!$oid) {
+        echo '<root><error>Brak order_id</error></root>';
+        return;
+    }
+
+    $orders = $pdo->query("
+        SELECT
+            o.orders_id,
+            o.orders_status,
+            o.customers_nip,
+            o.payment_method,
+            ot_total.value AS order_total,
+            ot_ship.value  AS shipping_total,
+            ot_ship.title  AS shipping_title
+        FROM orders o
+        LEFT JOIN orders_total ot_total ON ot_total.orders_id = o.orders_id AND ot_total.class = 'ot_total'
+        LEFT JOIN orders_total ot_ship  ON ot_ship.orders_id  = o.orders_id AND ot_ship.class  = 'ot_shipping'
+        WHERE o.orders_id = $oid
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($orders)) {
+        echo '<root><error>Nie znaleziono zamówienia</error></root>';
+        return;
+    }
+
+    $products = $pdo->query("
+        SELECT
+            op.orders_id,
+            op.products_name,
+            ROUND(op.products_price * (1 + op.products_tax / 100), 2) AS products_price,
+            op.products_quantity,
+            op.products_tax AS vatrate,
+            ROUND(op.final_price * (1 + op.products_tax / 100), 2) AS item_total
+        FROM orders_products op
+        WHERE op.orders_id = $oid
+        ORDER BY op.orders_products_id
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $discounts = $pdo->query("
+        SELECT ot.class, ot.title, ABS(ot.value) AS discount_amount
+        FROM orders_total ot
+        WHERE ot.orders_id = $oid AND ot.class IN ('ot_coupon', 'ot_discount')
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $allTotals = $pdo->query("
+        SELECT class, title, value FROM orders_total WHERE orders_id = $oid ORDER BY sort_order
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $cardModules      = ['przelewy24', 'payu', 'tpay', 'stripe', 'card', 'blik'];
+    $productsByOrder  = group_by($products, 'orders_id');
+    $discountsByOrder = group_by($discounts, 'orders_id');
+
+    $xml      = new SimpleXMLElement('<?xml version="1.0" encoding="utf-8"?><root/>');
+    $debug    = $xml->addChild('debug');
+
+    // orders_total raw
+    $totalsNode = $debug->addChild('orders_total');
+    foreach ($allTotals as $t) {
+        $row = $totalsNode->addChild('row');
+        $row->addAttribute('class', $t['class']);
+        $row->addAttribute('title', $t['title']);
+        $row->addAttribute('value', $t['value']);
+    }
+
+    $receipts = $xml->addChild('receipts');
+    $order    = $orders[0];
+    $ordId    = $order['orders_id'];
+    $payAmount = (float) ($order['order_total'] ?? 0);
+    $isCard    = in_array($order['payment_method'], $cardModules, true);
+
+    $itemsTotal = 0.0;
+    foreach ($productsByOrder[$ordId] ?? [] as $p) {
+        $itemsTotal += (float) $p['item_total'];
+    }
+    $shippingTotal = (float) ($order['shipping_total'] ?? 0);
+    $itemsTotal    = round($itemsTotal + $shippingTotal, 2);
+
+    $receipt = $receipts->addChild('receipt');
+    $receipt->addAttribute('id',            (string) $ordId);
+    $receipt->addAttribute('orders_status', (string) $order['orders_status']);
+    $receipt->addAttribute('step',          '0');
+    $receipt->addAttribute('total',         fmt($itemsTotal));
+    $receipt->addAttribute($isCard ? 'card' : 'cash', fmt($payAmount));
+
+    if (!empty($order['customers_nip'])) {
+        $receipt->addAttribute('nip', $order['customers_nip']);
+    }
+
+    if (!empty($discountsByOrder[$ordId])) {
+        $disc = $discountsByOrder[$ordId][0];
+        $receipt->addAttribute('discounttype',  '1');
+        $receipt->addAttribute('discountname',  $disc['title']);
+        $receipt->addAttribute('discountvalue', fmt($disc['discount_amount']));
+    }
+
+    foreach ($productsByOrder[$ordId] ?? [] as $p) {
+        $item = $receipt->addChild('item');
+        $item->addAttribute('name',     substr($p['products_name'], 0, 40));
+        $item->addAttribute('price',    fmt($p['products_price']));
+        $item->addAttribute('quantity', fmt_qty($p['products_quantity']));
+        $item->addAttribute('vatrate',  (string)(int)$p['vatrate']);
+        $item->addAttribute('total',    fmt($p['item_total']));
+    }
+
+    if ($shippingTotal > 0) {
+        $ship = $receipt->addChild('item');
+        $ship->addAttribute('name',     substr($order['shipping_title'] ?? 'Przesyłka', 0, 40));
+        $ship->addAttribute('price',    fmt($shippingTotal));
+        $ship->addAttribute('quantity', '1');
+        $ship->addAttribute('vatrate',  BSX_SHIPPING_VAT);
+        $ship->addAttribute('total',    fmt($shippingTotal));
+    }
+
+    echo $xml->asXML();
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
