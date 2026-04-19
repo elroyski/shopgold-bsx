@@ -130,19 +130,27 @@ function handle_getreceipts(PDO $pdo): void
     $receipts = $xml->addChild('receipts');
 
     foreach ($orders as $order) {
-        $oid     = $order['orders_id'];
-        $total   = (float) ($order['order_total'] ?? 0);
-        $isCard  = in_array($order['payment_method'], $cardModules, true);
+        $oid       = $order['orders_id'];
+        $payAmount = (float) ($order['order_total'] ?? 0); // kwota do zapłaty (po rabacie)
+        $isCard    = in_array($order['payment_method'], $cardModules, true);
+
+        // Suma pozycji brutto PRZED rabatem – drukarka wymaga total == suma_pozycji,
+        // a cash/card == kwota do zapłaty; sprawdza: total - discountvalue == cash/card
+        $itemsTotal = 0.0;
+        foreach ($productsByOrder[$oid] ?? [] as $p) {
+            $itemsTotal += (float) $p['item_total'];
+        }
+        $itemsTotal = round($itemsTotal + (float) ($order['shipping_total'] ?? 0), 2);
 
         $receipt = $receipts->addChild('receipt');
         $receipt->addAttribute('id',    (string) $oid);
         $receipt->addAttribute('step',  (string) ($stepByOrder[$oid] ?? 0));
-        $receipt->addAttribute('total', fmt($total));
+        $receipt->addAttribute('total', fmt($itemsTotal)); // suma pozycji (przed rabatem)
 
         if ($isCard) {
-            $receipt->addAttribute('card', fmt($total));
+            $receipt->addAttribute('card', fmt($payAmount)); // do zapłaty (po rabacie)
         } else {
-            $receipt->addAttribute('cash', fmt($total));
+            $receipt->addAttribute('cash', fmt($payAmount)); // do zapłaty (po rabacie)
         }
 
         if (!empty($order['customers_nip'])) {
