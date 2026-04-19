@@ -62,6 +62,7 @@ function handle_getreceipts(PDO $pdo): void
         LEFT JOIN orders_total ot_total ON ot_total.orders_id = o.orders_id AND ot_total.class = 'ot_total'
         LEFT JOIN orders_total ot_ship  ON ot_ship.orders_id  = o.orders_id AND ot_ship.class  = 'ot_shipping'
         WHERE o.orders_status = 17
+          AND o.invoice_dokument = 0
         ORDER BY o.orders_id
     ")->fetchAll(PDO::FETCH_ASSOC);
 
