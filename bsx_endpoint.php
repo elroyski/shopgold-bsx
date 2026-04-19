@@ -311,6 +311,9 @@ function handle_preview(PDO $pdo): void
         return;
     }
 
+    // Dump wszystkich kolumn orders dla diagnostyki
+    $rawOrder = $pdo->query("SELECT * FROM orders WHERE orders_id = $oid")->fetch(PDO::FETCH_ASSOC);
+
     $orders = $pdo->query("
         SELECT
             o.orders_id,
@@ -360,6 +363,12 @@ function handle_preview(PDO $pdo): void
 
     $xml      = new SimpleXMLElement('<?xml version="1.0" encoding="utf-8"?><root/>');
     $debug    = $xml->addChild('debug');
+
+    // orders raw (wszystkie kolumny)
+    $ordersNode = $debug->addChild('orders_row');
+    foreach ($rawOrder as $col => $val) {
+        $ordersNode->addAttribute($col, (string) $val);
+    }
 
     // orders_total raw
     $totalsNode = $debug->addChild('orders_total');
