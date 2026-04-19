@@ -99,7 +99,7 @@ function handle_getreceipts(PDO $pdo): void
             ABS(ot.value) AS discount_amount
         FROM orders_total ot
         WHERE ot.orders_id IN ($in)
-          AND ot.class IN ('ot_coupon', 'ot_discount')
+          AND ot.class IN ('ot_coupon', 'ot_discount', 'ot_discount_coupon')
         ORDER BY ot.orders_id
     ")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -132,26 +132,18 @@ function handle_getreceipts(PDO $pdo): void
 
     foreach ($orders as $order) {
         $oid       = $order['orders_id'];
-        $payAmount = (float) ($order['order_total'] ?? 0); // kwota do zapłaty (po rabacie)
-        $isCard    = in_array($order['payment_method'], $cardModules, true);
-
-        // Suma pozycji brutto PRZED rabatem – drukarka wymaga total == suma_pozycji,
-        // a cash/card == kwota do zapłaty; sprawdza: total - discountvalue == cash/card
-        $itemsTotal = 0.0;
-        foreach ($productsByOrder[$oid] ?? [] as $p) {
-            $itemsTotal += (float) $p['item_total'];
-        }
-        $itemsTotal = round($itemsTotal + (float) ($order['shipping_total'] ?? 0), 2);
+        $total  = (float) ($order['order_total'] ?? 0); // kwota do zapłaty (po rabacie)
+        $isCard = in_array($order['payment_method'], $cardModules, true);
 
         $receipt = $receipts->addChild('receipt');
         $receipt->addAttribute('id',    (string) $oid);
         $receipt->addAttribute('step',  (string) ($stepByOrder[$oid] ?? 0));
-        $receipt->addAttribute('total', fmt($itemsTotal)); // suma pozycji (przed rabatem)
+        $receipt->addAttribute('total', fmt($total));
 
         if ($isCard) {
-            $receipt->addAttribute('card', fmt($payAmount)); // do zapłaty (po rabacie)
+            $receipt->addAttribute('card', fmt($total));
         } else {
-            $receipt->addAttribute('cash', fmt($payAmount)); // do zapłaty (po rabacie)
+            $receipt->addAttribute('cash', fmt($total));
         }
 
         if (!empty($order['customers_nip'])) {
@@ -342,7 +334,7 @@ function handle_preview(PDO $pdo): void
     $discounts = $pdo->query("
         SELECT ot.class, ot.title, ABS(ot.value) AS discount_amount
         FROM orders_total ot
-        WHERE ot.orders_id = $oid AND ot.class IN ('ot_coupon', 'ot_discount')
+        WHERE ot.orders_id = $oid AND ot.class IN ('ot_coupon', 'ot_discount', 'ot_discount_coupon')
     ")->fetchAll(PDO::FETCH_ASSOC);
 
     $allTotals = $pdo->query("
@@ -371,18 +363,11 @@ function handle_preview(PDO $pdo): void
     $payAmount = (float) ($order['order_total'] ?? 0);
     $isCard    = in_array($order['payment_method'], $cardModules, true);
 
-    $itemsTotal = 0.0;
-    foreach ($productsByOrder[$ordId] ?? [] as $p) {
-        $itemsTotal += (float) $p['item_total'];
-    }
-    $shippingTotal = (float) ($order['shipping_total'] ?? 0);
-    $itemsTotal    = round($itemsTotal + $shippingTotal, 2);
-
     $receipt = $receipts->addChild('receipt');
     $receipt->addAttribute('id',            (string) $ordId);
     $receipt->addAttribute('orders_status', (string) $order['orders_status']);
     $receipt->addAttribute('step',          '0');
-    $receipt->addAttribute('total',         fmt($itemsTotal));
+    $receipt->addAttribute('total',         fmt($payAmount));
     $receipt->addAttribute($isCard ? 'card' : 'cash', fmt($payAmount));
 
     if (!empty($order['customers_nip'])) {
@@ -405,6 +390,7 @@ function handle_preview(PDO $pdo): void
         $item->addAttribute('total',    fmt($p['item_total']));
     }
 
+    $shippingTotal = (float) ($order['shipping_total'] ?? 0);
     if ($shippingTotal > 0) {
         $ship = $receipt->addChild('item');
         $ship->addAttribute('name',     substr($order['shipping_title'] ?? 'Przesyłka', 0, 40));
