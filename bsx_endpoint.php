@@ -332,7 +332,7 @@ function handle_preview(PDO $pdo): void
     ")->fetchAll(PDO::FETCH_ASSOC);
 
     $discounts = $pdo->query("
-        SELECT ot.class, ot.title, ABS(ot.value) AS discount_amount
+        SELECT ot.orders_id, ot.class, ot.title, ABS(ot.value) AS discount_amount
         FROM orders_total ot
         WHERE ot.orders_id = $oid AND ot.class IN ('ot_coupon', 'ot_discount', 'ot_discount_coupon')
     ")->fetchAll(PDO::FETCH_ASSOC);
