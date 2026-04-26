@@ -143,21 +143,22 @@ function handle_getreceipts(PDO $pdo): void
         }
         $itemsTotal = round($itemsTotal + (float) ($order['shipping_total'] ?? 0), 2);
 
-        // Jeśli nie ma rabatu, total = cash = payAmount (bez rabatu itemsTotal ≈ payAmount)
+        // total = zawsze suma pozycji (drukarka weryfikuje: sum(items) == total)
+        // cash/card = z rabatem: payAmount (ot_total); bez rabatu: itemsTotal
         $discountAmount = !empty($discountsByOrder[$oid])
             ? (float) $discountsByOrder[$oid][0]['discount_amount']
             : 0.0;
-        $receiptTotal = $discountAmount > 0 ? $itemsTotal : $payAmount;
+        $cashAmount = $discountAmount > 0 ? $payAmount : $itemsTotal;
 
         $receipt = $receipts->addChild('receipt');
         $receipt->addAttribute('id',    (string) $oid);
         $receipt->addAttribute('step',  (string) ($stepByOrder[$oid] ?? 0));
-        $receipt->addAttribute('total', fmt($receiptTotal));
+        $receipt->addAttribute('total', fmt($itemsTotal));
 
         if ($isCard) {
-            $receipt->addAttribute('card', fmt($payAmount));
+            $receipt->addAttribute('card', fmt($cashAmount));
         } else {
-            $receipt->addAttribute('cash', fmt($payAmount));
+            $receipt->addAttribute('cash', fmt($cashAmount));
         }
 
         if (!empty($order['customers_nip'])) {
@@ -396,14 +397,14 @@ function handle_preview(PDO $pdo): void
     }
     $shippingTotal = (float) ($order['shipping_total'] ?? 0);
     $itemsTotal    = round($itemsTotal + $shippingTotal, 2);
-    $receiptTotal  = $discountAmount > 0 ? $itemsTotal : $payAmount;
+    $cashAmount    = $discountAmount > 0 ? $payAmount : $itemsTotal;
 
     $receipt = $receipts->addChild('receipt');
     $receipt->addAttribute('id',            (string) $ordId);
     $receipt->addAttribute('orders_status', (string) $order['orders_status']);
     $receipt->addAttribute('step',          '0');
-    $receipt->addAttribute('total',         fmt($receiptTotal));
-    $receipt->addAttribute($isCard ? 'card' : 'cash', fmt($payAmount));
+    $receipt->addAttribute('total',         fmt($itemsTotal));
+    $receipt->addAttribute($isCard ? 'card' : 'cash', fmt($cashAmount));
 
     if (!empty($order['customers_nip'])) {
         $receipt->addAttribute('nip', $order['customers_nip']);
