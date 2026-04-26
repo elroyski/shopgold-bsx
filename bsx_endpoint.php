@@ -148,6 +148,19 @@ function handle_getreceipts(PDO $pdo): void
         $discountAmount = !empty($discountsByOrder[$oid])
             ? (float) $discountsByOrder[$oid][0]['discount_amount']
             : 0.0;
+
+        // Korekta zaokrąglenia NETTO→BRUTTO: dostosuj ostatnią pozycję o różnicę
+        // między sumą obliczonych brutto a ot_total (maks. 5 gr)
+        if ($discountAmount == 0 && !empty($productsByOrder[$oid])) {
+            $roundingDiff = round($payAmount - $itemsTotal, 2);
+            if ($roundingDiff != 0.0 && abs($roundingDiff) <= 0.05) {
+                $lastKey = array_key_last($productsByOrder[$oid]);
+                $productsByOrder[$oid][$lastKey]['item_total'] =
+                    round((float) $productsByOrder[$oid][$lastKey]['item_total'] + $roundingDiff, 2);
+                $itemsTotal = $payAmount;
+            }
+        }
+
         $cashAmount = $discountAmount > 0 ? $payAmount : $itemsTotal;
 
         $receipt = $receipts->addChild('receipt');
@@ -397,7 +410,18 @@ function handle_preview(PDO $pdo): void
     }
     $shippingTotal = (float) ($order['shipping_total'] ?? 0);
     $itemsTotal    = round($itemsTotal + $shippingTotal, 2);
-    $cashAmount    = $discountAmount > 0 ? $payAmount : $itemsTotal;
+
+    if ($discountAmount == 0 && !empty($productsByOrder[$ordId])) {
+        $roundingDiff = round($payAmount - $itemsTotal, 2);
+        if ($roundingDiff != 0.0 && abs($roundingDiff) <= 0.05) {
+            $lastKey = array_key_last($productsByOrder[$ordId]);
+            $productsByOrder[$ordId][$lastKey]['item_total'] =
+                round((float) $productsByOrder[$ordId][$lastKey]['item_total'] + $roundingDiff, 2);
+            $itemsTotal = $payAmount;
+        }
+    }
+
+    $cashAmount = $discountAmount > 0 ? $payAmount : $itemsTotal;
 
     $receipt = $receipts->addChild('receipt');
     $receipt->addAttribute('id',            (string) $ordId);
