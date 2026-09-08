@@ -83,7 +83,7 @@ function handle_getreceipts(PDO $pdo): void
             ROUND(op.products_price * (1 + op.products_tax / 100), 2) AS products_price,
             op.products_quantity,
             op.products_tax        AS vatrate,
-            ROUND(op.final_price   * (1 + op.products_tax / 100), 2) AS item_total
+            ROUND(op.final_price   * (1 + op.products_tax / 100) * op.products_quantity, 2) AS item_total
         FROM orders_products op
         WHERE op.orders_id IN ($in)
         ORDER BY op.orders_id, op.orders_products_id
@@ -356,7 +356,7 @@ function handle_preview(PDO $pdo): void
             ROUND(op.products_price * (1 + op.products_tax / 100), 2) AS products_price,
             op.products_quantity,
             op.products_tax AS vatrate,
-            ROUND(op.final_price * (1 + op.products_tax / 100), 2) AS item_total
+            ROUND(op.final_price * (1 + op.products_tax / 100) * op.products_quantity, 2) AS item_total
         FROM orders_products op
         WHERE op.orders_id = $oid
         ORDER BY op.orders_products_id
