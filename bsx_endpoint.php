@@ -89,6 +89,16 @@ function handle_getreceipts(PDO $pdo): void
         ORDER BY op.orders_id, op.orders_products_id
     ")->fetchAll(PDO::FETCH_ASSOC);
 
+    // Drukarka liczy wartość pozycji jako price * quantity – więc price
+    // MUSI wynikać z item_total/quantity, inaczej fizyczny paragon się
+    // rozjedzie z total przy quantity > 1 (np. 65.00*2=130.00 != 129.98)
+    foreach ($products as &$p) {
+        if ((float) $p['products_quantity'] > 0) {
+            $p['products_price'] = round((float) $p['item_total'] / (float) $p['products_quantity'], 2);
+        }
+    }
+    unset($p);
+
     // Rabaty/kupony z orders_total
     // class = 'ot_coupon'   → kupon rabatowy (wartość ujemna)
     // class = 'ot_discount' → rabat grupowy  (wartość ujemna)
@@ -157,6 +167,11 @@ function handle_getreceipts(PDO $pdo): void
                 $lastKey = array_key_last($productsByOrder[$oid]);
                 $productsByOrder[$oid][$lastKey]['item_total'] =
                     round((float) $productsByOrder[$oid][$lastKey]['item_total'] + $roundingDiff, 2);
+                $lastQty = (float) $productsByOrder[$oid][$lastKey]['products_quantity'];
+                if ($lastQty > 0) {
+                    $productsByOrder[$oid][$lastKey]['products_price'] =
+                        round((float) $productsByOrder[$oid][$lastKey]['item_total'] / $lastQty, 2);
+                }
                 $itemsTotal = $payAmount;
             }
         }
@@ -362,6 +377,13 @@ function handle_preview(PDO $pdo): void
         ORDER BY op.orders_products_id
     ")->fetchAll(PDO::FETCH_ASSOC);
 
+    foreach ($products as &$p) {
+        if ((float) $p['products_quantity'] > 0) {
+            $p['products_price'] = round((float) $p['item_total'] / (float) $p['products_quantity'], 2);
+        }
+    }
+    unset($p);
+
     $discounts = $pdo->query("
         SELECT ot.orders_id, ot.class, ot.title, ABS(ot.value) AS discount_amount
         FROM orders_total ot
@@ -417,6 +439,11 @@ function handle_preview(PDO $pdo): void
             $lastKey = array_key_last($productsByOrder[$ordId]);
             $productsByOrder[$ordId][$lastKey]['item_total'] =
                 round((float) $productsByOrder[$ordId][$lastKey]['item_total'] + $roundingDiff, 2);
+            $lastQty = (float) $productsByOrder[$ordId][$lastKey]['products_quantity'];
+            if ($lastQty > 0) {
+                $productsByOrder[$ordId][$lastKey]['products_price'] =
+                    round((float) $productsByOrder[$ordId][$lastKey]['item_total'] / $lastQty, 2);
+            }
             $itemsTotal = $payAmount;
         }
     }
